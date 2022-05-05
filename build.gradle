@@ -12,6 +12,8 @@ apply plugin: 'java'
 // Apply the application plugin to add support for building an application
 apply plugin: 'application'
 
+apply plugin: 'jacoco'
+
 // In this section you declare where to find the dependencies of your project
 repositories {
     // Use jcenter for resolving your dependencies.
@@ -25,8 +27,82 @@ dependencies {
 
 // https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter-api
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.0.3'
+    // https://mvnrepository.com/artifact/org.projectlombok/lombok
+    compileOnly 'org.projectlombok:lombok:1.18.24'
+    testImplementation 'org.projectlombok:lombok:1.18.24'
+    annotationProcessor 'org.projectlombok:lombok:1.18.8'
 }
 
 // Define the main class for the application
 mainClassName = 'App'
+
+test {
+    // Enable JUnit 5 (Gradle 4.6+).
+    useJUnitPlatform()
+
+    // Always run tests, even when nothing changed.
+    dependsOn 'cleanTest'
+
+    // Show test results.
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+
+    finalizedBy jacocoTestReport // report is always generated after tests run
+}
+
+jacocoTestReport {
+    reports {
+        xml.enabled = true
+        html.enabled = true
+    }
+    doLast {
+        def report = file("${jacoco.reportsDir}/test/jacocoTestReport.xml")
+        printCoverage(report)
+    }
+}
+
+def printCoverage(File xml) {
+    if (!xml.exists()) return
+
+    def parser = new XmlParser()
+    parser.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+    parser.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
+    def results = parser.parse(xml)
+
+    def percentage = {
+        def covered = it.'@covered' as Double
+        def missed = it.'@missed' as Double
+        ((covered / (covered + missed)) * 100).round(2)
+    }
+
+    def counters = results.counter
+    def metrics = [
+            'instruction': percentage(counters.find { it.'@type'.equals('INSTRUCTION') }),
+            'branch'     : percentage(counters.find { it.'@type'.equals('BRANCH') }),
+            'line'       : percentage(counters.find { it.'@type'.equals('LINE') }),
+            'complexity' : percentage(counters.find { it.'@type'.equals('COMPLEXITY') }),
+            'method'     : percentage(counters.find { it.'@type'.equals('METHOD') }),
+            'class'      : percentage(counters.find { it.'@type'.equals('CLASS') })
+    ]
+
+    logger.quiet("----- Code Coverage ----------")
+    metrics.each { key, value -> logger.quiet(sprintf(" - %-11s: %6.2f%%", key, value)) }
+    logger.quiet("------------------------------")
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            limit {
+                minimum = 0.9
+            }
+        }
+    }
+}
+
+test.finalizedBy jacocoTestCoverageVerification
+
+
 
